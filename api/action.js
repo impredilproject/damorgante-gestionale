@@ -43,6 +43,28 @@ export default async function handler(req,res){
     } else if(action==='set_availability'){
       const {error}=await s.from('morgante_catalog').update({available:!!body.available}).eq('id',body.id);
       if(error) throw error;
+    } else if(action==='create_catalog_item' || action==='update_catalog_item'){
+      const name=String(body.name||'').trim();
+      const kind=body.kind==='drink'?'drink':'ingredient';
+      const category=String(body.category||'Altro').trim()||'Altro';
+      const price=kind==='drink'?Math.max(0,Number(body.price||0)):0;
+      const counts_for_sandwich_price=kind==='ingredient'?body.counts_for_sandwich_price!==false:false;
+      const available=body.available!==false;
+      if(!name) throw new Error('Inserisci il nome del prodotto');
+      if(!Number.isFinite(price)) throw new Error('Prezzo non valido');
+      const payload={name,kind,category,price,counts_for_sandwich_price,available};
+      if(action==='create_catalog_item'){
+        const {data:last}=await s.from('morgante_catalog').select('sort_order').eq('kind',kind).order('sort_order',{ascending:false}).limit(1);
+        payload.sort_order=(last?.[0]?.sort_order||0)+10;
+        const {error}=await s.from('morgante_catalog').insert(payload);
+        if(error) throw error;
+      }else{
+        const {error}=await s.from('morgante_catalog').update(payload).eq('id',body.id);
+        if(error) throw error;
+      }
+    } else if(action==='delete_catalog_item'){
+      const {error}=await s.from('morgante_catalog').delete().eq('id',body.id);
+      if(error) throw error;
     } else if(action==='create_order' || action==='update_order'){
       if(!String(body.customer_name||'').trim()) throw new Error('Il nome cliente è obbligatorio');
       const {data:catalog,error:ce}=await s.from('morgante_catalog').select('*');
