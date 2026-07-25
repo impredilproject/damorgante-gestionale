@@ -1,16 +1,44 @@
 <!doctype html>
-<html lang="it"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-<title>Morgante Gestionale</title><link rel="stylesheet" href="/style.css"></head>
+<html lang="it">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+  <title>Morgante Gestionale</title>
+  <link rel="stylesheet" href="/style.css">
+</head>
 <body>
-<section id="login" class="center card"><h1>Morgante</h1><h2>Gestionale</h2><input id="pin" inputmode="numeric" maxlength="8" placeholder="PIN"><button id="loginBtn">Accedi</button><p id="loginErr"></p></section>
+<section id="login" class="center card">
+  <h1>Morgante</h1>
+  <h2>Gestionale</h2>
+  <input id="pin" inputmode="numeric" maxlength="8" placeholder="PIN">
+  <button id="loginBtn">Accedi</button>
+  <p id="loginErr"></p>
+</section>
+
 <div id="app" hidden>
-<header><div><b>Morgante Gestionale</b><small id="qrState"></small></div><button id="logoutBtn" class="secondary">Esci</button></header>
-<nav><button data-tab="banco" class="active">Banco</button><button data-tab="qr">Richieste QR</button><button data-tab="coda">Paninaro</button><button data-tab="storico">Storico</button><button data-tab="impostazioni">Impostazioni</button></nav>
-<main>
-<section id="tab-banco" class="tab"></section>
-<section id="tab-qr" class="tab" hidden></section>
-<section id="tab-coda" class="tab" hidden></section>
-<section id="tab-storico" class="tab" hidden></section>
-<section id="tab-impostazioni" class="tab" hidden></section>
-</main></div>
-<script src="/app.js"></script></body></html>
+  <header>
+    <div>
+      <b>Morgante Gestionale</b>
+      <small id="qrState"></small>
+    </div>
+    <button id="logoutBtn" class="secondary">Esci</button>
+  </header>
+
+  <nav>
+    <button data-tab="banco" class="active">Banco</button>
+    <button data-tab="coda">Paninaro</button>
+    <button data-tab="storico">Storico</button>
+    <button data-tab="impostazioni">Impostazioni</button>
+  </nav>
+
+  <main>
+    <section id="tab-banco" class="tab"></section>
+    <section id="tab-coda" class="tab" hidden></section>
+    <section id="tab-storico" class="tab" hidden></section>
+    <section id="tab-impostazioni" class="tab" hidden></section>
+  </main>
+</div>
+
+<script src="/app.js"></script>
+</body>
+</html>
