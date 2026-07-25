@@ -1,5 +1,5 @@
 
-let data={settings:null,catalog:[],orders:[]}, editId=null;
+let data={settings:null,catalog:[],orders:[]}, editId=null, catalogEditId=null;
 const $=s=>document.querySelector(s), $$=s=>[...document.querySelectorAll(s)];
 async function api(url,body){const r=await fetch(url,{method:body?'POST':'GET',headers:{'Content-Type':'application/json'},body:body?JSON.stringify(body):undefined});const j=await r.json().catch(()=>({}));if(!r.ok)throw new Error(j.error||'Errore');return j}
 $('#loginBtn').onclick=async()=>{try{await api('/api/login',{pin:$('#pin').value});$('#login').hidden=true;$('#app').hidden=false;await load()}catch(e){$('#loginErr').textContent=e.message}}
@@ -67,9 +67,152 @@ function renderStorico(){
  $$('[data-delete]').forEach(b=>b.onclick=()=>{if(confirm('Eliminare definitivamente?'))act('delete_order',b.dataset.delete)});
 }
 function renderSettings(){
- $('#tab-impostazioni').innerHTML=`<div class="panel"><h2>Impostazioni</h2><div class="row between"><div><b>Richieste panini tramite QR</b><div class="muted">Il menu resta sempre visibile.</div></div><button id="toggleQr" class="${data.settings.qr_orders_enabled?'danger':'success'}">${data.settings.qr_orders_enabled?'Blocca richieste':'Apri richieste'}</button></div></div>
- <h2>Disponibilità prodotti</h2><div class="grid">${data.catalog.map(x=>`<div class="order row between"><div><b>${esc(x.name)}</b><div class="muted">${esc(x.kind)} · ${esc(x.category)}</div></div><button data-av="${x.id}" data-val="${!x.available}" class="${x.available?'success':'secondary'}">${x.available?'Disponibile':'Bloccato'}</button></div>`).join('')}</div>`;
+ const editing=catalogEditId?data.catalog.find(x=>x.id===catalogEditId):null;
+ const ingredients=data.catalog.filter(x=>x.kind==='ingredient');
+ const drinks=data.catalog.filter(x=>x.kind==='drink');
+
+ $('#tab-impostazioni').innerHTML=`
+ <div class="panel">
+   <h2>Impostazioni</h2>
+   <div class="row between">
+     <div>
+       <b>Richieste panini tramite QR</b>
+       <div class="muted">Il menu e il configuratore restano sempre visibili.</div>
+     </div>
+     <button id="toggleQr" class="${data.settings.qr_orders_enabled?'danger':'success'}">
+       ${data.settings.qr_orders_enabled?'Blocca richieste':'Apri richieste'}
+     </button>
+   </div>
+ </div>
+
+ <div class="panel" id="catalogForm">
+   <h2>${editing?'Modifica prodotto':'Aggiungi prodotto'}</h2>
+   <div class="grid">
+     <div>
+       <label><b>Nome</b></label>
+       <input id="catName" value="${esc(editing?.name||'')}" placeholder="Es. Provola o Coca-Cola">
+     </div>
+     <div>
+       <label><b>Tipo</b></label>
+       <select id="catKind">
+         <option value="ingredient" ${editing?.kind!=='drink'?'selected':''}>Ingrediente</option>
+         <option value="drink" ${editing?.kind==='drink'?'selected':''}>Bevanda</option>
+       </select>
+     </div>
+     <div>
+       <label><b>Categoria</b></label>
+       <input id="catCategory" value="${esc(editing?.category||'')}" placeholder="Es. Carni, Salse, Birre">
+     </div>
+     <div id="priceBox">
+       <label><b>Prezzo bevanda</b></label>
+       <input id="catPrice" type="number" min="0" step="0.10" value="${editing?.kind==='drink'?Number(editing.price):''}" placeholder="0,00">
+     </div>
+   </div>
+   <div class="row">
+     <label class="checkrow" id="countBox">
+       <input id="catCounts" type="checkbox" ${editing?editing.counts_for_sandwich_price!==false?'checked':'':'checked'}>
+       <span>Conta nel numero degli ingredienti per il prezzo 5/6/7 €</span>
+     </label>
+     <label class="checkrow">
+       <input id="catAvailable" type="checkbox" ${editing?editing.available?'checked':'':'checked'}>
+       <span>Disponibile nel menu</span>
+     </label>
+   </div>
+   <div class="row">
+     <button id="saveCatalog" class="success">${editing?'Salva modifiche':'Aggiungi'}</button>
+     ${editing?'<button id="cancelCatalog" class="secondary">Annulla modifica</button>':''}
+   </div>
+   <p class="muted">Per ketchup, maionese e salsa rosa disattiva “Conta nel numero degli ingredienti”. Per le bevande inserisci il prezzo.</p>
+ </div>
+
+ <h2>Ingredienti (${ingredients.length})</h2>
+ <div class="grid">
+   ${ingredients.map(x=>catalogCard(x)).join('')||'<p>Nessun ingrediente.</p>'}
+ </div>
+
+ <h2>Bevande (${drinks.length})</h2>
+ <div class="grid">
+   ${drinks.map(x=>catalogCard(x)).join('')||'<p>Nessuna bevanda.</p>'}
+ </div>`;
+
+ function catalogCard(x){
+   const detail=x.kind==='drink'
+     ? `${esc(x.category)} · ${euro(x.price)}`
+     : `${esc(x.category)} · ${x.counts_for_sandwich_price?'conta nel prezzo':'salsa gratuita/non conta'}`;
+   return `<div class="order">
+     <div class="row between">
+       <div>
+         <b class="big">${esc(x.name)}</b>
+         <div class="muted">${detail}</div>
+       </div>
+       <span class="badge">${x.available?'Disponibile':'Bloccato'}</span>
+     </div>
+     <div class="row">
+       <button class="secondary" data-cat-edit="${x.id}">Modifica</button>
+       <button data-av="${x.id}" data-val="${!x.available}" class="${x.available?'warn':'success'}">
+         ${x.available?'Blocca':'Sblocca'}
+       </button>
+       <button class="danger" data-cat-delete="${x.id}">Elimina</button>
+     </div>
+   </div>`;
+ }
+
+ const kindSelect=$('#catKind');
+ function syncCatalogFields(){
+   const isDrink=kindSelect.value==='drink';
+   $('#priceBox').style.display=isDrink?'block':'none';
+   $('#countBox').style.display=isDrink?'none':'flex';
+ }
+ syncCatalogFields();
+ kindSelect.onchange=syncCatalogFields;
+
  $('#toggleQr').onclick=()=>act('toggle_qr',null,{enabled:!data.settings.qr_orders_enabled});
- $$('[data-av]').forEach(b=>b.onclick=()=>act('set_availability',null,{id:b.dataset.av,available:b.dataset.val==='true'}));
+
+ $('#saveCatalog').onclick=async()=>{
+   const kind=$('#catKind').value;
+   const payload={
+     name:$('#catName').value,
+     kind,
+     category:$('#catCategory').value,
+     price:kind==='drink'?$('#catPrice').value:0,
+     counts_for_sandwich_price:kind==='ingredient'?$('#catCounts').checked:false,
+     available:$('#catAvailable').checked
+   };
+   try{
+     await api('/api/action',{
+       action:editing?'update_catalog_item':'create_catalog_item',
+       id:editing?.id,
+       ...payload
+     });
+     catalogEditId=null;
+     await load();
+     document.querySelector('#catalogForm')?.scrollIntoView({behavior:'smooth',block:'start'});
+   }catch(e){alert(e.message)}
+ };
+
+ if(editing){
+   $('#cancelCatalog').onclick=()=>{catalogEditId=null;renderSettings()};
+ }
+
+ $$('[data-cat-edit]').forEach(b=>b.onclick=()=>{
+   catalogEditId=b.dataset.catEdit;
+   renderSettings();
+   document.querySelector('#catalogForm')?.scrollIntoView({behavior:'smooth',block:'start'});
+ });
+
+ $$('[data-av]').forEach(b=>b.onclick=()=>act('set_availability',null,{
+   id:b.dataset.av,
+   available:b.dataset.val==='true'
+ }));
+
+ $$('[data-cat-delete]').forEach(b=>b.onclick=async()=>{
+   const item=data.catalog.find(x=>x.id===b.dataset.catDelete);
+   if(!confirm(`Eliminare definitivamente "${item?.name||'questo prodotto'}"?\\n\\nPer una mancanza temporanea usa Blocca.`)) return;
+   try{
+     await api('/api/action',{action:'delete_catalog_item',id:b.dataset.catDelete});
+     if(catalogEditId===b.dataset.catDelete) catalogEditId=null;
+     await load();
+   }catch(e){alert(e.message)}
+ });
 }
 async function act(action,id,extra={}){try{await api('/api/action',{action,id,...extra});await load()}catch(e){alert(e.message)}}

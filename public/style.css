@@ -7,3 +7,7 @@ button.secondary{background:#e5e7eb;color:#111827}button.danger{background:#b91c
 header{display:flex;justify-content:space-between;align-items:center;padding:12px 16px;background:#111827;color:white;position:sticky;top:0;z-index:2}header small{display:block}
 nav{display:flex;gap:6px;overflow:auto;padding:8px;background:white;position:sticky;top:66px;z-index:2}nav button{white-space:nowrap;background:#e5e7eb;color:#111827}nav button.active{background:#111827;color:white}
 main{padding:12px;max-width:1100px;margin:auto}.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:12px}.row{display:flex;gap:8px;align-items:center;flex-wrap:wrap}.between{justify-content:space-between}.chips{display:flex;flex-wrap:wrap;gap:7px}.chip{background:#e5e7eb;color:#111827}.chip.on{background:#047857;color:white}.order{margin-bottom:10px}.preparing{border:3px solid #f59e0b}.muted{color:#6b7280}.big{font-size:1.25rem}.total{font-size:1.5rem;font-weight:800}.badge{padding:4px 8px;border-radius:999px;background:#e5e7eb}.sep{height:1px;background:#e5e7eb;margin:12px 0}
+
+.checkrow{display:flex;align-items:center;gap:8px;background:#f3f4f6;padding:10px 12px;border-radius:10px;flex:1;min-width:260px}
+.checkrow input{width:auto;margin:0;transform:scale(1.2)}
+label{display:block;margin-top:4px}
