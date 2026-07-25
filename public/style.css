@@ -1,0 +1,9 @@
+
+:root{font-family:system-ui,-apple-system,sans-serif;color:#171717;background:#f3f4f6}*{box-sizing:border-box}
+body{margin:0}.center{max-width:380px;margin:12vh auto}.card,.panel,.order{background:white;border-radius:16px;padding:16px;box-shadow:0 2px 12px #0001}
+input,select,textarea,button{font:inherit}input,select,textarea{width:100%;padding:12px;border:1px solid #d1d5db;border-radius:10px;margin:5px 0}
+button{border:0;border-radius:10px;padding:11px 14px;background:#111827;color:white;font-weight:700;cursor:pointer}
+button.secondary{background:#e5e7eb;color:#111827}button.danger{background:#b91c1c}button.success{background:#047857}button.warn{background:#b45309}
+header{display:flex;justify-content:space-between;align-items:center;padding:12px 16px;background:#111827;color:white;position:sticky;top:0;z-index:2}header small{display:block}
+nav{display:flex;gap:6px;overflow:auto;padding:8px;background:white;position:sticky;top:66px;z-index:2}nav button{white-space:nowrap;background:#e5e7eb;color:#111827}nav button.active{background:#111827;color:white}
+main{padding:12px;max-width:1100px;margin:auto}.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:12px}.row{display:flex;gap:8px;align-items:center;flex-wrap:wrap}.between{justify-content:space-between}.chips{display:flex;flex-wrap:wrap;gap:7px}.chip{background:#e5e7eb;color:#111827}.chip.on{background:#047857;color:white}.order{margin-bottom:10px}.preparing{border:3px solid #f59e0b}.muted{color:#6b7280}.big{font-size:1.25rem}.total{font-size:1.5rem;font-weight:800}.badge{padding:4px 8px;border-radius:999px;background:#e5e7eb}.sep{height:1px;background:#e5e7eb;margin:12px 0}
