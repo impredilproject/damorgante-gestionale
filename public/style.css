@@ -157,3 +157,23 @@ html,body,button,input,select,textarea,a{touch-action:manipulation}
 .queue-summary{margin-top:4px;font-size:1rem}.delivery-time{margin:12px 0;padding:10px 12px;border-radius:12px;background:#f3eee8}
 .sandwich-qty{margin-left:6px}.sandwich-qty output{min-width:38px;font-weight:900}.selected-drinks{margin-top:10px}
 #drinkSelect{min-height:52px;font-size:1rem}
+/* V5.1 — Banco ordinato come il menu pubblico */
+.ingredient-category-list{display:grid;gap:15px;margin-top:14px}
+.ingredient-category{padding:14px;border:1px solid #e8ddd1;border-radius:17px;background:#fffdf9}
+.ingredient-category-title{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:10px}
+.ingredient-category-title h4{margin:0;color:#462d22;font-size:1rem}
+.ingredient-category-title span{color:#7b6d62;font-size:.7rem;font-weight:700}
+.ingredient-category .chips{margin:0;display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}
+.ingredient-category .chip{min-height:46px;margin:0;text-align:center}
+.banco-accordion{margin:18px 0;border:1px solid #e5d8ca;border-radius:17px;background:#fff;overflow:hidden}
+.banco-accordion-toggle{width:100%;display:flex;align-items:center;justify-content:space-between;gap:12px;padding:16px;border:0;background:#faf6f0;color:inherit;text-align:left}
+.banco-accordion-toggle h3{margin:0 0 3px}
+.banco-accordion-toggle span{display:block;color:#776a60;font-size:.75rem;line-height:1.35}
+.banco-accordion-toggle>b{width:32px;height:32px;display:grid;place-items:center;border-radius:50%;background:#efe3d5;color:#512e23}
+.banco-accordion-content{display:none;padding:14px}
+.banco-accordion.open .banco-accordion-content{display:block}
+.banco-accordion.open .banco-accordion-toggle{border-bottom:1px solid #e7dbcf}
+.all-drinks .drink-pick-row.selected{background:#eef8f2;border-color:#aad3bd}
+@media(min-width:700px){
+  .ingredient-category .chips{grid-template-columns:repeat(3,minmax(0,1fr))}
+}

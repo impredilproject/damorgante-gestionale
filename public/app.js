@@ -2,6 +2,8 @@ let data={settings:null,catalog:[],orders:[]};
 let editId=null;
 let catalogEditId=null;
 let currentTab='banco';
+let bancoSidesOpen=false;
+let bancoDrinksOpen=false;
 let knownLiveOrderSignatures=null;
 let timerInterval=null;
 let audioContext=null;
@@ -378,6 +380,36 @@ function render(){
   renderSettings();
 }
 
+
+function ingredientCategoryRank(category){
+  const value=String(category||'').trim().toLowerCase();
+  if(/(carne|carni|salumi|insaccati)/.test(value)) return 10;
+  if(/(contorno|contorni|verdure|ortaggi)/.test(value)) return 20;
+  if(/(formaggio|formaggi|latticini)/.test(value)) return 30;
+  if(/(salsa|salse|condimenti)/.test(value)) return 40;
+  return 100;
+}
+
+function groupedIngredients(items){
+  const groups=items.reduce((result,item)=>{
+    const category=item.category||'Altro';
+    (result[category]||=[]).push(item);
+    return result;
+  },{});
+
+  return Object.entries(groups).sort(([a],[b])=>{
+    const rank=ingredientCategoryRank(a)-ingredientCategoryRank(b);
+    return rank||a.localeCompare(b,'it');
+  });
+}
+
+function bancoAccordionSummary(items,type){
+  const count=items.reduce((sum,item)=>sum+Number(item.qty||0),0);
+  if(!count) return 'Tocca per aprire';
+  if(type==='side') return `${count} ${count===1?'porzione selezionata':'porzioni selezionate'}`;
+  return items.filter(item=>Number(item.qty)>0).map(item=>`${Number(item.qty)} ${esc(item.name)}`).join(' · ');
+}
+
 function renderBanco(){
   const ingredients=cat('ingredient').filter(item=>item.available);
   const sideItems=cat('side').filter(item=>item.available);
@@ -408,43 +440,62 @@ function renderBanco(){
       <div id="sandwiches"></div>
       <button id="addSw" class="secondary full">+ Aggiungi panino</button>
 
-      <h3>Porzioni di patatine</h3>
-      <div class="drink-picker side-picker">
-        ${sideItems.map(item=>{
-          const selected=draft.sides.find(side=>side.item_id===item.id);
-          const qty=Number(selected?.qty||0);
-          return `
-            <div class="drink-pick-row">
-              <div><b>${esc(item.name)}</b><span>${euro(item.price)} a porzione</span></div>
-              <div class="qty">
-                <button data-draft-side-minus="${item.id}" ${qty===0?'disabled':''}>−</button>
-                <output>${qty}</output>
-                <button data-draft-side-plus="${item.id}">+</button>
-              </div>
-            </div>`;
-        }).join('')||'<p>Nessuna porzione disponibile.</p>'}
-      </div>
+      <section class="banco-accordion ${bancoSidesOpen?'open':''}">
+        <button type="button" id="toggleBancoSides" class="banco-accordion-toggle">
+          <div>
+            <h3>Porzioni di patatine${draft.sides.reduce((sum,item)=>sum+Number(item.qty||0),0)?` (${draft.sides.reduce((sum,item)=>sum+Number(item.qty||0),0)})`:''}</h3>
+            <span>${bancoAccordionSummary(draft.sides,'side')}</span>
+          </div>
+          <b>${bancoSidesOpen?'⌃':'⌄'}</b>
+        </button>
+        <div class="banco-accordion-content">
+          <div class="drink-picker side-picker">
+            ${sideItems.map(item=>{
+              const selected=draft.sides.find(side=>side.item_id===item.id);
+              const qty=Number(selected?.qty||0);
+              return `
+                <div class="drink-pick-row">
+                  <div><b>${esc(item.name)}</b><span>${euro(item.price)} a porzione</span></div>
+                  <div class="qty">
+                    <button data-draft-side-minus="${item.id}" ${qty===0?'disabled':''}>−</button>
+                    <output>${qty}</output>
+                    <button data-draft-side-plus="${item.id}">+</button>
+                  </div>
+                </div>`;
+            }).join('')||'<p>Nessuna porzione disponibile.</p>'}
+          </div>
+        </div>
+      </section>
 
       <h3>Nome</h3>
       <input id="cust" placeholder="Nome cliente obbligatorio" value="${esc(draft.customer_name)}">
 
-      <h3>Bevande</h3>
-      <select id="drinkSelect"><option value="">Aggiungi una bevanda…</option>${drinkItems.map(item=>`<option value="${item.id}">${esc(item.name)} · ${euro(item.price)}</option>`).join('')}</select>
-      <div class="drink-picker selected-drinks">
-        ${drinkItems.filter(item=>draft.drinks.some(drink=>drink.item_id===item.id)).map(item=>{
-          const selected=draft.drinks.find(drink=>drink.item_id===item.id);
-          const qty=Number(selected?.qty||0);
-          return `
-            <div class="drink-pick-row">
-              <div><b>${esc(item.name)}</b><span>${euro(item.price)}</span></div>
-              <div class="qty">
-                <button data-draft-drink-minus="${item.id}" ${qty===0?'disabled':''}>−</button>
-                <output>${qty}</output>
-                <button data-draft-drink-plus="${item.id}">+</button>
-              </div>
-            </div>`;
-        }).join('')||'<p class="empty-state">Nessuna bevanda aggiunta.</p>'}
-      </div>
+      <section class="banco-accordion ${bancoDrinksOpen?'open':''}">
+        <button type="button" id="toggleBancoDrinks" class="banco-accordion-toggle">
+          <div>
+            <h3>Bevande${draft.drinks.reduce((sum,item)=>sum+Number(item.qty||0),0)?` (${draft.drinks.reduce((sum,item)=>sum+Number(item.qty||0),0)})`:''}</h3>
+            <span>${bancoAccordionSummary(draft.drinks,'drink')}</span>
+          </div>
+          <b>${bancoDrinksOpen?'⌃':'⌄'}</b>
+        </button>
+        <div class="banco-accordion-content">
+          <div class="drink-picker selected-drinks all-drinks">
+            ${drinkItems.map(item=>{
+              const selected=draft.drinks.find(drink=>drink.item_id===item.id);
+              const qty=Number(selected?.qty||0);
+              return `
+                <div class="drink-pick-row ${qty>0?'selected':''}">
+                  <div><b>${esc(item.name)}</b><span>${euro(item.price)}</span></div>
+                  <div class="qty">
+                    <button data-draft-drink-minus="${item.id}" ${qty===0?'disabled':''}>−</button>
+                    <output>${qty}</output>
+                    <button data-draft-drink-plus="${item.id}">+</button>
+                  </div>
+                </div>`;
+            }).join('')||'<p class="empty-state">Nessuna bevanda disponibile.</p>'}
+          </div>
+        </div>
+      </section>
 
       <div class="sep"></div>
       <select id="pay">
@@ -487,12 +538,21 @@ function bindBancoForm(ingredients,editing){
             ${draft.sandwiches.length>1?`<button class="danger small" data-delete-sw="${index}">Rimuovi</button>`:''}
           </div>
         </div>
-        <div class="chips">
-          ${ingredients.map(item=>`
-            <button class="chip ${(sw.ingredient_ids||[]).includes(item.id)?'on':''}"
-              data-sw-index="${index}" data-ingredient-id="${item.id}">
-              ${esc(item.name)}${ingredientWeight(item)===0.5?' ½':''}
-            </button>`).join('')}
+        <div class="ingredient-category-list">
+          ${groupedIngredients(ingredients).map(([category,items])=>`
+            <section class="ingredient-category">
+              <div class="ingredient-category-title">
+                <h4>${esc(category)}</h4>
+                ${items.some(item=>ingredientWeight(item)===0.5)?'<span>Le salse valgono ½</span>':''}
+              </div>
+              <div class="chips">
+                ${items.map(item=>`
+                  <button class="chip ${(sw.ingredient_ids||[]).includes(item.id)?'on':''}"
+                    data-sw-index="${index}" data-ingredient-id="${item.id}">
+                    ${esc(item.name)}${ingredientWeight(item)===0.5?' ½':''}
+                  </button>`).join('')}
+              </div>
+            </section>`).join('')}
         </div>
       </article>`).join('');
 
@@ -539,6 +599,18 @@ function bindBancoForm(ingredients,editing){
 
   drawSandwiches();
 
+  $('#toggleBancoSides')?.addEventListener('click',()=>{
+    syncDraftFields();
+    bancoSidesOpen=!bancoSidesOpen;
+    renderBanco();
+  });
+
+  $('#toggleBancoDrinks')?.addEventListener('click',()=>{
+    syncDraftFields();
+    bancoDrinksOpen=!bancoDrinksOpen;
+    renderBanco();
+  });
+
   $('#cust').oninput=event=>draft.customer_name=event.target.value;
   $('#pay').value=draft.payment_status;
   $('#pay').onchange=event=>draft.payment_status=event.target.value;
@@ -577,12 +649,6 @@ function bindBancoForm(ingredients,editing){
     };
   });
 
-  $('#drinkSelect').onchange=event=>{
-    syncDraftFields();
-    const item=data.catalog.find(x=>x.id===event.target.value);
-    if(item && !draft.drinks.some(x=>x.item_id===item.id)) draft.drinks.push({item_id:item.id,name:item.name,qty:1});
-    renderBanco();
-  };
 
   $$('[data-draft-drink-plus]').forEach(button=>{
     button.onclick=()=>{
