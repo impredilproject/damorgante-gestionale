@@ -2,6 +2,79 @@ let data={settings:null,catalog:[],orders:[]};
 let editId=null;
 let catalogEditId=null;
 let currentTab='banco';
+let knownLiveOrderSignatures=null;
+let timerInterval=null;
+let audioContext=null;
+let wakeLock=null;
+let wakeLockWanted=true;
+
+async function requestWakeLock(){
+  if(!wakeLockWanted || document.visibilityState!=='visible' || !('wakeLock' in navigator)) return;
+  try{
+    wakeLock=await navigator.wakeLock.request('screen');
+    wakeLock.addEventListener('release',()=>{ wakeLock=null; });
+  }catch(_){
+    wakeLock=null;
+  }
+}
+
+async function releaseWakeLock(){
+  try{ await wakeLock?.release(); }catch(_){}
+  wakeLock=null;
+}
+
+document.addEventListener('visibilitychange',()=>{
+  if(document.visibilityState==='visible') requestWakeLock();
+});
+window.addEventListener('focus',requestWakeLock);
+window.addEventListener('pageshow',requestWakeLock);
+
+document.addEventListener('dblclick',event=>event.preventDefault(),{passive:false});
+document.addEventListener('gesturestart',event=>event.preventDefault(),{passive:false});
+
+function unlockAudio(){
+  if(!audioContext){
+    const AudioCtx=window.AudioContext||window.webkitAudioContext;
+    if(AudioCtx) audioContext=new AudioCtx();
+  }
+  if(audioContext?.state==='suspended') audioContext.resume().catch(()=>{});
+}
+document.addEventListener('pointerdown',unlockAudio,{passive:true});
+
+function playNewOrderSound(){
+  try{
+    unlockAudio();
+    if(!audioContext || audioContext.state!=='running') return;
+    const now=audioContext.currentTime;
+    [0,0.18,0.36].forEach((delay,index)=>{
+      const oscillator=audioContext.createOscillator();
+      const gain=audioContext.createGain();
+      oscillator.type='sine';
+      oscillator.frequency.value=index===1?880:660;
+      gain.gain.setValueAtTime(0.0001,now+delay);
+      gain.gain.exponentialRampToValueAtTime(0.28,now+delay+0.015);
+      gain.gain.exponentialRampToValueAtTime(0.0001,now+delay+0.14);
+      oscillator.connect(gain);
+      gain.connect(audioContext.destination);
+      oscillator.start(now+delay);
+      oscillator.stop(now+delay+0.15);
+    });
+    if(navigator.vibrate) navigator.vibrate([180,80,180]);
+  }catch(_){}
+}
+
+function detectNewLiveOrders(nextData){
+  const signatures=new Map(
+    (nextData.orders||[])
+      .filter(order=>['pending_approval','queued','preparing'].includes(order.status))
+      .map(order=>[order.id,`${order.status}|${order.updated_at||order.created_at}`])
+  );
+  if(knownLiveOrderSignatures!==null){
+    const changed=[...signatures].some(([id,signature])=>knownLiveOrderSignatures.get(id)!==signature);
+    if(changed) playNewOrderSound();
+  }
+  knownLiveOrderSignatures=signatures;
+}
 
 const $=s=>document.querySelector(s);
 const $$=s=>[...document.querySelectorAll(s)];
@@ -9,7 +82,7 @@ const $$=s=>[...document.querySelectorAll(s)];
 function emptyDraft(){
   return {
     customer_name:'',
-    sandwiches:[{name:'Panino 1',ingredient_ids:[],ingredient_names:[]}],
+    sandwiches:[{name:'Panino 1',ingredient_ids:[],ingredient_names:[],qty:1}],
     sides:[],
     drinks:[],
     payment_status:'unpaid',
@@ -25,9 +98,15 @@ async function api(url,body){
   const response=await fetch(url,{
     method:body?'POST':'GET',
     headers:{'Content-Type':'application/json'},
-    body:body?JSON.stringify(body):undefined
+    body:body?JSON.stringify(body):undefined,
+    credentials:'same-origin'
   });
   const json=await response.json().catch(()=>({}));
+  if(response.status===401){
+    const error=new Error(json.error||'Sessione scaduta');
+    error.status=401;
+    throw error;
+  }
   if(!response.ok) throw new Error(json.error||'Errore');
   return json;
 }
@@ -37,6 +116,7 @@ $('#loginBtn').onclick=async()=>{
     await api('/api/login',{pin:$('#pin').value});
     $('#login').hidden=true;
     $('#app').hidden=false;
+    await requestWakeLock();
     await load();
   }catch(error){
     $('#loginErr').textContent=error.message;
@@ -44,9 +124,31 @@ $('#loginBtn').onclick=async()=>{
 };
 
 $('#logoutBtn').onclick=async()=>{
+  wakeLockWanted=false;
+  await releaseWakeLock();
   await api('/api/logout',{});
   location.reload();
 };
+
+async function restoreSession(){
+  try{
+    const nextData=await api('/api/bootstrap');
+    detectNewLiveOrders(nextData);
+    data=nextData;
+    $('#login').hidden=true;
+    $('#app').hidden=false;
+    await requestWakeLock();
+    render();
+  }catch(error){
+    $('#app').hidden=true;
+    $('#login').hidden=false;
+    if(error.status!==401){
+      $('#loginErr').textContent='Impossibile collegarsi al gestionale. Riprova.';
+    }
+  }
+}
+
+restoreSession();
 
 $$('nav button').forEach(button=>{
   button.onclick=()=>{
@@ -91,7 +193,7 @@ function sandwichPrice(sw){
 }
 
 function draftTotal(){
-  const sandwichTotal=(draft.sandwiches||[]).reduce((sum,sw)=>sum+sandwichPrice(sw),0);
+  const sandwichTotal=(draft.sandwiches||[]).reduce((sum,sw)=>sum+sandwichPrice(sw)*Number(sw.qty||1),0);
   const sideTotal=(draft.sides||[]).reduce((sum,side)=>{
     const item=data.catalog.find(x=>x.id===side.item_id);
     return sum+Number(item?.price||0)*Number(side.qty||0);
@@ -104,21 +206,30 @@ function draftTotal(){
 }
 
 async function load(){
-  data=await api('/api/bootstrap');
+  const nextData=await api('/api/bootstrap');
+  detectNewLiveOrders(nextData);
+  data=nextData;
   render();
 }
 
 setInterval(()=>{
   const tag=document.activeElement?.tagName;
   if(!$('#app').hidden && !['INPUT','TEXTAREA','SELECT'].includes(tag)){
-    load().catch(()=>{});
+    load().catch(async error=>{
+      if(error.status===401){
+        await releaseWakeLock();
+        $('#app').hidden=true;
+        $('#login').hidden=false;
+        $('#loginErr').textContent='Sessione scaduta: inserisci nuovamente il PIN.';
+      }
+    });
   }
 },4000);
 
 function orderLines(order,includeDrinks=true){
   let html=(order.sandwiches||[]).map((sw,index)=>`
     <div class="order-line">
-      <b>Panino ${index+1}</b>
+      <b>Panino ${index+1} ×${Number(sw.qty||1)}</b>
       <span>${esc((sw.ingredient_names||[]).join(', ')||'Nessun ingrediente')}</span>
     </div>`).join('');
 
@@ -143,6 +254,42 @@ function orderLines(order,includeDrinks=true){
   return html;
 }
 
+function elapsedMs(order){
+  const start=new Date(order.created_at).getTime();
+  const end=order.delivered_at?new Date(order.delivered_at).getTime():Date.now();
+  return Math.max(0,end-start);
+}
+function formatElapsed(ms,withSeconds=true){
+  const total=Math.floor(ms/1000);
+  const minutes=Math.floor(total/60);
+  const seconds=total%60;
+  return withSeconds?`${minutes} min ${String(seconds).padStart(2,'0')} sec`:`${minutes} min`;
+}
+function timeClass(ms){
+  const min=ms/60000;
+  return min<5?'time-green':min<10?'time-yellow':'time-red';
+}
+function timeBadge(order){
+  const ms=elapsedMs(order);
+  return `<span class="time-badge ${timeClass(ms)}" data-live-time="${order.id}">⏱ ${formatElapsed(ms)}</span>`;
+}
+function refreshVisibleTimers(){
+  $$('[data-live-time]').forEach(el=>{
+    const order=data.orders.find(o=>o.id===el.dataset.liveTime);
+    if(!order) return;
+    const ms=elapsedMs(order);
+    el.textContent=`⏱ ${formatElapsed(ms)}`;
+    el.className=`time-badge ${timeClass(ms)}`;
+  });
+  const oldest=$('[data-oldest-time]');
+  if(oldest){
+    const live=data.orders.filter(o=>['queued','preparing'].includes(o.status));
+    oldest.textContent=live.length?formatElapsed(Math.max(...live.map(elapsedMs)),false):'0 min';
+  }
+}
+if(timerInterval) clearInterval(timerInterval);
+timerInterval=setInterval(refreshVisibleTimers,1000);
+
 function pendingOrders(){
   return data.orders
     .filter(order=>order.status==='pending_approval')
@@ -161,7 +308,7 @@ function pendingCardsHtml(context){
           <div>
             <span class="source-badge">QR</span>
             <b class="big">${esc(order.customer_name)}</b>
-            <div class="muted">${new Date(order.created_at).toLocaleTimeString('it-IT',{hour:'2-digit',minute:'2-digit'})}</div>
+            <div class="muted">Arrivato alle ${new Date(order.created_at).toLocaleTimeString('it-IT',{hour:'2-digit',minute:'2-digit'})}</div>${timeBadge(order)}
           </div>
           <div class="right">
             <b class="total-small">${euro(order.original_total)}</b>
@@ -172,15 +319,10 @@ function pendingCardsHtml(context){
         <div class="order-content">${orderLines(order,context==='banco')}</div>
 
         <div class="accept-box">
-          <select data-pay-method="${context}-${order.id}">
-            <option value="">Metodo di pagamento</option>
-            <option value="Contanti">Contanti</option>
-            <option value="Carta">Carta</option>
-          </select>
-
           <div class="row">
             ${mustPay?'':`<button class="success" data-accept-unpaid="${context}-${order.id}">Accetta da pagare</button>`}
             <button class="primary" data-accept-paid="${context}-${order.id}">Pagato e accetta</button>
+            ${context==='banco'?`<button class="secondary" data-edit-live="${context}-${order.id}">Modifica</button>`:''}
             <button class="danger" data-reject="${context}-${order.id}">Rifiuta</button>
           </div>
         </div>
@@ -199,12 +341,14 @@ function bindPendingActions(context){
   $$(`[data-accept-paid^="${context}-"]`).forEach(button=>{
     button.onclick=()=>{
       const id=button.dataset.acceptPaid.slice(context.length+1);
-      const method=$(`[data-pay-method="${context}-${id}"]`).value;
-      if(!method){
-        alert('Seleziona il metodo di pagamento.');
-        return;
-      }
-      act('accept_qr',id,{mark_paid:true,payment_method:method});
+      act('accept_qr',id,{mark_paid:true});
+    };
+  });
+
+  $$(`[data-edit-live^="${context}-"]`).forEach(button=>{
+    button.onclick=()=>{
+      const id=button.dataset.editLive.slice(context.length+1);
+      startEditOrder(id);
     };
   });
 
@@ -260,7 +404,7 @@ function renderBanco(){
         <b class="draft-total">${euro(draftTotal())}</b>
       </div>
 
-      <input id="cust" placeholder="Nome cliente obbligatorio" value="${esc(draft.customer_name)}">
+      <h3>Componi il panino</h3>
       <div id="sandwiches"></div>
       <button id="addSw" class="secondary full">+ Aggiungi panino</button>
 
@@ -281,9 +425,13 @@ function renderBanco(){
         }).join('')||'<p>Nessuna porzione disponibile.</p>'}
       </div>
 
+      <h3>Nome</h3>
+      <input id="cust" placeholder="Nome cliente obbligatorio" value="${esc(draft.customer_name)}">
+
       <h3>Bevande</h3>
-      <div class="drink-picker">
-        ${drinkItems.map(item=>{
+      <select id="drinkSelect"><option value="">Aggiungi una bevanda…</option>${drinkItems.map(item=>`<option value="${item.id}">${esc(item.name)} · ${euro(item.price)}</option>`).join('')}</select>
+      <div class="drink-picker selected-drinks">
+        ${drinkItems.filter(item=>draft.drinks.some(drink=>drink.item_id===item.id)).map(item=>{
           const selected=draft.drinks.find(drink=>drink.item_id===item.id);
           const qty=Number(selected?.qty||0);
           return `
@@ -295,22 +443,13 @@ function renderBanco(){
                 <button data-draft-drink-plus="${item.id}">+</button>
               </div>
             </div>`;
-        }).join('')||'<p>Nessuna bevanda disponibile.</p>'}
+        }).join('')||'<p class="empty-state">Nessuna bevanda aggiunta.</p>'}
       </div>
 
       <div class="sep"></div>
-      <div class="grid two">
-        <select id="pay">
-          <option value="unpaid">Da pagare</option>
-          <option value="paid">Pagato</option>
-        </select>
-        <input id="paidAmount" type="number" min="0" step=".50" placeholder="Importo incassato" value="${esc(draft.paid_total)}">
-      </div>
-
-      <select id="method">
-        <option value="">Metodo pagamento</option>
-        <option value="Contanti" ${draft.payment_method==='Contanti'?'selected':''}>Contanti</option>
-        <option value="Carta" ${draft.payment_method==='Carta'?'selected':''}>Carta</option>
+      <select id="pay">
+        <option value="unpaid">Da pagare</option>
+        <option value="paid">Pagato</option>
       </select>
 
       <textarea id="notes" placeholder="Note">${esc(draft.notes)}</textarea>
@@ -341,9 +480,10 @@ function bindBancoForm(ingredients,editing){
     $('#sandwiches').innerHTML=draft.sandwiches.map((sw,index)=>`
       <article class="order sandwich-edit">
         <div class="row between">
-          <b>Panino ${index+1}</b>
+          <b>Panino ${index+1} ×${Number(sw.qty||1)}</b>
           <div class="row">
-            <span class="badge">${euro(sandwichPrice(sw))}</span>
+            <span class="badge">${euro(sandwichPrice(sw)*Number(sw.qty||1))}</span>
+            <div class="qty sandwich-qty"><button data-sw-minus="${index}" ${Number(sw.qty||1)<=1?'disabled':''}>−</button><output>×${Number(sw.qty||1)}</output><button data-sw-plus="${index}">+</button></div>
             ${draft.sandwiches.length>1?`<button class="danger small" data-delete-sw="${index}">Rimuovi</button>`:''}
           </div>
         </div>
@@ -375,6 +515,9 @@ function bindBancoForm(ingredients,editing){
       };
     });
 
+    $$('[data-sw-plus]').forEach(button=>{button.onclick=()=>{syncDraftFields();draft.sandwiches[Number(button.dataset.swPlus)].qty=Math.min(99,Number(draft.sandwiches[Number(button.dataset.swPlus)].qty||1)+1);renderBanco();};});
+    $$('[data-sw-minus]').forEach(button=>{button.onclick=()=>{syncDraftFields();const sw=draft.sandwiches[Number(button.dataset.swMinus)];sw.qty=Math.max(1,Number(sw.qty||1)-1);renderBanco();};});
+
     $$('[data-delete-sw]').forEach(button=>{
       button.onclick=()=>{
         syncDraftFields();
@@ -389,8 +532,8 @@ function bindBancoForm(ingredients,editing){
   function syncDraftFields(){
     draft.customer_name=$('#cust')?.value??draft.customer_name;
     draft.payment_status=$('#pay')?.value??draft.payment_status;
-    draft.paid_total=$('#paidAmount')?.value??draft.paid_total;
-    draft.payment_method=$('#method')?.value??draft.payment_method;
+    draft.paid_total='';
+    draft.payment_method='';
     draft.notes=$('#notes')?.value??draft.notes;
   }
 
@@ -399,8 +542,6 @@ function bindBancoForm(ingredients,editing){
   $('#cust').oninput=event=>draft.customer_name=event.target.value;
   $('#pay').value=draft.payment_status;
   $('#pay').onchange=event=>draft.payment_status=event.target.value;
-  $('#paidAmount').oninput=event=>draft.paid_total=event.target.value;
-  $('#method').onchange=event=>draft.payment_method=event.target.value;
   $('#notes').oninput=event=>draft.notes=event.target.value;
 
   $('#addSw').onclick=()=>{
@@ -408,7 +549,8 @@ function bindBancoForm(ingredients,editing){
     draft.sandwiches.push({
       name:`Panino ${draft.sandwiches.length+1}`,
       ingredient_ids:[],
-      ingredient_names:[]
+      ingredient_names:[],
+      qty:1
     });
     renderBanco();
   };
@@ -434,6 +576,13 @@ function bindBancoForm(ingredients,editing){
       renderBanco();
     };
   });
+
+  $('#drinkSelect').onchange=event=>{
+    syncDraftFields();
+    const item=data.catalog.find(x=>x.id===event.target.value);
+    if(item && !draft.drinks.some(x=>x.item_id===item.id)) draft.drinks.push({item_id:item.id,name:item.name,qty:1});
+    renderBanco();
+  };
 
   $$('[data-draft-drink-plus]').forEach(button=>{
     button.onclick=()=>{
@@ -485,11 +634,6 @@ function bindBancoForm(ingredients,editing){
       return;
     }
 
-    if(draft.payment_status==='paid' && !draft.payment_method){
-      alert('Seleziona il metodo di pagamento.');
-      return;
-    }
-
     try{
       await api('/api/action',{
         action:editing?'update_order':'create_order',
@@ -529,39 +673,20 @@ function unpaidCardsHtml(){
         <b class="total-small">${euro(order.original_total)}</b>
       </div>
       ${orderLines(order,true)}
-      <div class="grid pay-grid">
-        <select data-unpaid-method="${order.id}">
-          <option value="">Metodo</option>
-          <option value="Contanti">Contanti</option>
-          <option value="Carta">Carta</option>
-        </select>
-        <input data-unpaid-amount="${order.id}" type="number" min="0" step=".50" value="${Number(order.original_total)}">
-        <button class="success" data-mark-paid="${order.id}">Registra pagamento</button>
-      </div>
+      <button class="success full" data-mark-paid="${order.id}">PAGATO</button>
     </article>`).join('');
 }
 
 function bindUnpaidActions(){
   $$('[data-mark-paid]').forEach(button=>{
-    button.onclick=()=>{
-      const id=button.dataset.markPaid;
-      const method=$(`[data-unpaid-method="${id}"]`).value;
-      const paidTotal=$(`[data-unpaid-amount="${id}"]`).value;
-
-      if(!method){
-        alert('Seleziona il metodo di pagamento.');
-        return;
-      }
-
-      act('mark_paid',id,{payment_method:method,paid_total:paidTotal});
-    };
+    button.onclick=()=>act('mark_paid',button.dataset.markPaid);
   });
 }
 
 function renderCoda(){
   const queue=data.orders
     .filter(order=>['preparing','queued'].includes(order.status))
-    .sort((a,b)=>new Date(a.accepted_at||a.created_at)-new Date(b.accepted_at||b.created_at));
+    .sort((a,b)=>new Date(a.created_at)-new Date(b.created_at));
 
   $('#tab-coda').innerHTML=`
     <section class="section-block">
@@ -579,6 +704,7 @@ function renderCoda(){
         <div>
           <span class="eyebrow">Produzione</span>
           <h2>Coda panini</h2>
+          <div class="queue-summary"><b>${queue.length} ordini</b> · più vecchio <span data-oldest-time>${queue.length?formatElapsed(Math.max(...queue.map(elapsedMs)),false):'0 min'}</span></div>
         </div>
       </div>
       ${queue.length?queue.map((order,index)=>`
@@ -587,16 +713,43 @@ function renderCoda(){
             <b class="big">${index+1}. ${esc(order.customer_name)}</b>
             <div class="right">
               <span class="badge">${order.status==='preparing'?'IN PREPARAZIONE':'IN CODA'}</span>
+              ${timeBadge(order)}
               <span class="badge ${order.payment_status==='paid'?'badge-ok':'badge-warn'}">${order.payment_status==='paid'?'PAGATO':'DA PAGARE'}</span>
             </div>
           </div>
           <div class="order-content">${orderLines(order,false)}</div>
-          ${order.status==='preparing'?`<button class="success full" data-deliver="${order.id}">CONSEGNATO</button>`:''}
+          <div class="row queue-actions">
+            <button class="success" data-deliver="${order.id}">CONSEGNATO</button>
+          </div>
         </article>`).join(''):'<p class="empty-state">Nessun panino in coda.</p>'}
     </section>`;
 
   bindPendingActions('paninaro');
   $$('[data-deliver]').forEach(button=>button.onclick=()=>act('deliver',button.dataset.deliver));
+}
+
+
+function startEditOrder(id){
+  const order=data.orders.find(item=>item.id===id);
+  if(!order) return;
+
+  editId=order.id;
+  draft={
+    customer_name:order.customer_name||'',
+    sandwiches:(order.sandwiches||[]).length
+      ? JSON.parse(JSON.stringify(order.sandwiches)).map(sw=>({...sw,qty:Number(sw.qty||1)}))
+      : [{name:'Panino 1',ingredient_ids:[],ingredient_names:[],qty:1}],
+    sides:JSON.parse(JSON.stringify(order.sides||[])),
+    drinks:JSON.parse(JSON.stringify(order.drinks||[])),
+    payment_status:order.payment_status||'unpaid',
+    paid_total:'',
+    payment_method:'',
+    notes:order.notes||''
+  };
+
+  const bancoButton=$$('nav button').find(item=>item.dataset.tab==='banco');
+  bancoButton?.click();
+  setTimeout(()=>document.querySelector('#tab-banco .panel')?.scrollIntoView({behavior:'smooth',block:'start'}),50);
 }
 
 function renderStorico(){
@@ -619,35 +772,29 @@ function renderStorico(){
           <b>${euro(order.original_total)}</b>
         </div>
         ${orderLines(order,true)}
+        ${order.status==='delivered'?`<div class="delivery-time">Tempo totale: <b>${formatElapsed(elapsedMs(order))}</b></div>`:''}
         <div class="muted">
           Pagamento: ${order.payment_status==='paid'
-            ? `${euro(order.paid_total)} · ${esc(order.payment_method||'Metodo non indicato')}`
+            ? 'PAGATO'
             : 'DA PAGARE'}
           · Sconto: ${euro(order.discount)}
         </div>
         <div class="row">
           <button class="secondary" data-edit="${order.id}">Modifica</button>
+          ${order.status==='delivered'?`<button class="warn" data-reopen="${order.id}">Annulla consegna</button>`:''}
           <button class="danger" data-delete="${order.id}">Elimina</button>
         </div>
       </article>`).join(''):'<p class="empty-state">Nessun ordine nello storico.</p>'}`;
 
   $$('[data-edit]').forEach(button=>{
+    button.onclick=()=>startEditOrder(button.dataset.edit);
+  });
+
+  $$('[data-reopen]').forEach(button=>{
     button.onclick=()=>{
-      const order=data.orders.find(item=>item.id===button.dataset.edit);
-      editId=order.id;
-      draft={
-        customer_name:order.customer_name||'',
-        sandwiches:(order.sandwiches||[]).length
-          ? JSON.parse(JSON.stringify(order.sandwiches))
-          : [{name:'Panino 1',ingredient_ids:[],ingredient_names:[]}],
-        sides:JSON.parse(JSON.stringify(order.sides||[])),
-        drinks:JSON.parse(JSON.stringify(order.drinks||[])),
-        payment_status:order.payment_status||'unpaid',
-        paid_total:order.paid_total??'',
-        payment_method:order.payment_method||'',
-        notes:order.notes||''
-      };
-      $$('nav button').find(item=>item.dataset.tab==='banco').click();
+      if(confirm('Annullare la consegna e rimettere questo ordine in coda?')){
+        act('reopen_order',button.dataset.reopen);
+      }
     };
   });
 

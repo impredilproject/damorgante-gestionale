@@ -138,3 +138,22 @@ h1,h2,h3{color:#261f1a}
 
 .sides-line{color:#8b5415;background:#fff8e9;padding-left:8px;padding-right:8px;border-radius:9px}
 .side-picker .drink-pick-row{background:#fff7e7;border:1px solid #f1d6a5}
+
+html,body,button,input,select,textarea,a{touch-action:manipulation}
+#tab-coda .order{padding:22px}
+#tab-coda .big{font-size:1.65rem;line-height:1.15}
+#tab-coda .order-line{padding:14px 0;align-items:flex-start}
+#tab-coda .order-line b{min-width:115px;font-size:1.25rem}
+#tab-coda .order-line span{font-size:1.28rem;line-height:1.35;font-weight:750;color:#241f1b}
+#tab-coda .badge{font-size:.78rem;padding:7px 10px}
+.queue-actions{margin-top:14px}
+.queue-actions button{flex:1;min-height:54px;font-size:1rem}
+#tab-coda .pending-card .accept-box button{min-height:50px}
+
+#wakeStatus{font-size:.64rem;color:#e9cba5;margin-top:2px}
+
+.time-badge{display:inline-flex;align-items:center;border-radius:999px;padding:7px 11px;font-weight:900;font-variant-numeric:tabular-nums;margin-top:7px}
+.time-green{background:#dff7e7;color:#146c36}.time-yellow{background:#fff1bd;color:#795800}.time-red{background:#ffe0dc;color:#a42417}
+.queue-summary{margin-top:4px;font-size:1rem}.delivery-time{margin:12px 0;padding:10px 12px;border-radius:12px;background:#f3eee8}
+.sandwich-qty{margin-left:6px}.sandwich-qty output{min-width:38px;font-weight:900}.selected-drinks{margin-top:10px}
+#drinkSelect{min-height:52px;font-size:1rem}
