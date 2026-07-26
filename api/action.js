@@ -27,7 +27,8 @@ function normalizeOrderItems(body){
     .map((sw,index)=>({
       name:`Panino ${index+1}`,
       ingredient_ids:[...new Set(sw.ingredient_ids||[])],
-      ingredient_names:[...new Set(sw.ingredient_names||[])]
+      ingredient_names:[...new Set(sw.ingredient_names||[])],
+      qty:Math.min(99,Math.max(1,Number(sw.qty||1)))
     }));
 
   const sides=(body.sides||[])
@@ -45,7 +46,7 @@ function totalFor(items,catalog){
   let total=0;
 
   for(const sw of items.sandwiches){
-    total+=sandwichPrice(sw.ingredient_ids,catalog);
+    total+=sandwichPrice(sw.ingredient_ids,catalog)*Number(sw.qty||1);
   }
 
   for(const side of items.sides){
@@ -116,13 +117,10 @@ export default async function handler(req,res){
       };
 
       if(markPaid){
-        const method=String(body.payment_method||'').trim();
-        if(!method) throw new Error('Seleziona il metodo di pagamento');
-
         update.payment_status='paid';
         update.paid_total=Number(order.original_total);
         update.discount=0;
-        update.payment_method=method;
+        update.payment_method=null;
       }
 
       const {error}=await s
@@ -147,9 +145,6 @@ export default async function handler(req,res){
       if(error) throw error;
 
     }else if(action==='mark_paid'){
-      const method=String(body.payment_method||'').trim();
-      if(!method) throw new Error('Seleziona il metodo di pagamento');
-
       const {data:order,error:readError}=await s
         .from('morgante_orders')
         .select('original_total')
@@ -158,21 +153,13 @@ export default async function handler(req,res){
 
       if(readError) throw readError;
 
-      const paidTotal=body.paid_total==='' || body.paid_total===undefined
-        ? Number(order.original_total)
-        : Number(body.paid_total);
-
-      if(!Number.isFinite(paidTotal) || paidTotal<0){
-        throw new Error('Importo non valido');
-      }
-
       const {error}=await s
         .from('morgante_orders')
         .update({
           payment_status:'paid',
-          paid_total:paidTotal,
-          discount:Math.max(0,Number(order.original_total)-paidTotal),
-          payment_method:method,
+          paid_total:Number(order.original_total),
+          discount:0,
+          payment_method:null,
           updated_at:new Date().toISOString()
         })
         .eq('id',body.id);
@@ -188,6 +175,20 @@ export default async function handler(req,res){
           updated_at:new Date().toISOString()
         })
         .eq('id',body.id);
+
+      if(error) throw error;
+      await refresh(s);
+
+    }else if(action==='reopen_order'){
+      const {error}=await s
+        .from('morgante_orders')
+        .update({
+          status:'queued',
+          delivered_at:null,
+          updated_at:new Date().toISOString()
+        })
+        .eq('id',body.id)
+        .eq('status','delivered');
 
       if(error) throw error;
       await refresh(s);
@@ -273,19 +274,7 @@ export default async function handler(req,res){
 
       const original_total=totalFor(items,catalog);
       const isPaid=body.payment_status==='paid';
-      const paid_total=isPaid
-        ? Number(body.paid_total==='' || body.paid_total===undefined
-          ? original_total
-          : body.paid_total)
-        : null;
-
-      if(isPaid && (!Number.isFinite(paid_total) || paid_total<0)){
-        throw new Error('Importo incassato non valido');
-      }
-
-      if(isPaid && !String(body.payment_method||'').trim()){
-        throw new Error('Seleziona il metodo di pagamento');
-      }
+      const paid_total=isPaid ? original_total : null;
 
       const payload={
         customer_name:String(body.customer_name).trim(),
@@ -296,7 +285,7 @@ export default async function handler(req,res){
         paid_total,
         discount:isPaid?Math.max(0,original_total-paid_total):0,
         payment_status:isPaid?'paid':'unpaid',
-        payment_method:isPaid?body.payment_method:null,
+        payment_method:null,
         notes:body.notes||null,
         updated_at:new Date().toISOString()
       };

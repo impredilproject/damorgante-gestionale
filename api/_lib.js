@@ -11,7 +11,7 @@ export function supabaseAdmin() {
   });
 }
 export function signSession() {
-  const exp = Date.now() + 12*60*60*1000;
+  const exp = Date.now() + 15*60*60*1000;
   const body = String(exp);
   const sig = crypto.createHmac('sha256', process.env.SESSION_SECRET).update(body).digest('hex');
   return `${body}.${sig}`;

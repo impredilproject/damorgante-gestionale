@@ -8,6 +8,6 @@ export default async function handler(req,res){
   const ok=pin.length===expected.length && crypto.timingSafeEqual(Buffer.from(pin),Buffer.from(expected));
   if(!ok) return res.status(401).json({error:'PIN errato'});
   const token=signSession();
-  res.setHeader('Set-Cookie',`morgante_session=${token}; HttpOnly; Secure; SameSite=Strict; Path=/; Max-Age=43200`);
+  res.setHeader('Set-Cookie',`morgante_session=${token}; HttpOnly; Secure; SameSite=Strict; Path=/; Max-Age=54000`);
   res.json({ok:true});
 }
