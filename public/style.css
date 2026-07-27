@@ -139,7 +139,8 @@ h1,h2,h3{color:#261f1a}
 .sides-line{color:#8b5415;background:#fff8e9;padding-left:8px;padding-right:8px;border-radius:9px}
 .side-picker .drink-pick-row{background:#fff7e7;border:1px solid #f1d6a5}
 
-html,body,button,input,select,textarea,a{touch-action:manipulation}
+html,body{touch-action:auto}
+button,input,select,textarea,a{touch-action:manipulation}
 #tab-coda .order{padding:22px}
 #tab-coda .big{font-size:1.65rem;line-height:1.15}
 #tab-coda .order-line{padding:14px 0;align-items:flex-start}
@@ -177,3 +178,7 @@ html,body,button,input,select,textarea,a{touch-action:manipulation}
 @media(min-width:700px){
   .ingredient-category .chips{grid-template-columns:repeat(3,minmax(0,1fr))}
 }
+
+/* V5.3 — compatibilità con i gesti di Safari */
+html,body{touch-action:auto;-webkit-text-size-adjust:100%}
+button,input,select,textarea,a{touch-action:manipulation}

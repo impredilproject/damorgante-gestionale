@@ -31,8 +31,6 @@ document.addEventListener('visibilitychange',()=>{
 window.addEventListener('focus',requestWakeLock);
 window.addEventListener('pageshow',requestWakeLock);
 
-document.addEventListener('dblclick',event=>event.preventDefault(),{passive:false});
-document.addEventListener('gesturestart',event=>event.preventDefault(),{passive:false});
 
 function unlockAudio(){
   if(!audioContext){
