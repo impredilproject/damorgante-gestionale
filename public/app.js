@@ -9,6 +9,16 @@ let timerInterval=null;
 let audioContext=null;
 let wakeLock=null;
 let wakeLockWanted=true;
+let manualOrderSending=false;
+let manualSubmissionId=null;
+
+function newSubmissionId(){
+  if(globalThis.crypto?.randomUUID) return globalThis.crypto.randomUUID();
+  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g,char=>{
+    const value=Math.random()*16|0;
+    return (char==='x'?value:(value&0x3|0x8)).toString(16);
+  });
+}
 
 async function requestWakeLock(){
   if(!wakeLockWanted || document.visibilityState!=='visible' || !('wakeLock' in navigator)) return;
@@ -312,7 +322,7 @@ function pendingCardsHtml(context){
           </div>
           <div class="right">
             <b class="total-small">${euro(order.original_total)}</b>
-            <span class="badge ${mustPay?'badge-warn':'badge-ok'}">${mustPay?'Pagamento prima':'Pagamento anche dopo'}</span>
+            <span class="badge badge-warn">Da pagare</span>
           </div>
         </div>
 
@@ -320,7 +330,7 @@ function pendingCardsHtml(context){
 
         <div class="accept-box">
           <div class="row">
-            ${mustPay?'':`<button class="success" data-accept-unpaid="${context}-${order.id}">Accetta da pagare</button>`}
+            <button class="success" data-accept-unpaid="${context}-${order.id}">Accetta da pagare</button>
             <button class="primary" data-accept-paid="${context}-${order.id}">Pagato e accetta</button>
             ${context==='banco'?`<button class="secondary" data-edit-live="${context}-${order.id}">Modifica</button>`:''}
             <button class="danger" data-reject="${context}-${order.id}">Rifiuta</button>
@@ -679,6 +689,8 @@ function bindBancoForm(ingredients,editing){
   }
 
   $('#save').onclick=async()=>{
+    // Blocca subito i tocchi ripetuti, senza attendere il nuovo caricamento della pagina.
+    if(manualOrderSending) return;
     syncDraftFields();
 
     const sandwiches=draft.sandwiches
@@ -698,10 +710,19 @@ function bindBancoForm(ingredients,editing){
       return;
     }
 
+    const saveButton=$('#save');
+    manualOrderSending=true;
+    if(saveButton){
+      saveButton.disabled=true;
+      saveButton.textContent=editing?'Salvataggio…':'Invio…';
+    }
+    if(!editing) manualSubmissionId ||= newSubmissionId();
+
     try{
       await api('/api/action',{
         action:editing?'update_order':'create_order',
         id:editing?.id,
+        submission_id:editing?undefined:manualSubmissionId,
         customer_name:draft.customer_name,
         sandwiches,
         sides,
@@ -713,9 +734,17 @@ function bindBancoForm(ingredients,editing){
       });
       editId=null;
       draft=emptyDraft();
+      manualSubmissionId=null;
       await load();
     }catch(error){
       alert(error.message);
+    }finally{
+      manualOrderSending=false;
+      const currentSave=$('#save');
+      if(currentSave){
+        currentSave.disabled=false;
+        currentSave.textContent=editId?'Salva modifiche':'Invia in coda';
+      }
     }
   };
 }
