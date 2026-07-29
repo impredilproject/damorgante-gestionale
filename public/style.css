@@ -182,3 +182,28 @@ button,input,select,textarea,a{touch-action:manipulation}
 /* V5.3 — compatibilità con i gesti di Safari */
 html,body{touch-action:auto;-webkit-text-size-adjust:100%}
 button,input,select,textarea,a{touch-action:manipulation}
+
+/* V6.3 — Cassa separata e storico incassi */
+.payment-search{max-width:420px;margin-bottom:12px}
+.payment-list{display:grid;gap:6px}
+.payment-row{display:grid;grid-template-columns:minmax(140px,1.2fr) minmax(180px,2fr) 100px 90px;gap:10px;align-items:center;padding:8px 10px;background:#fff;border:1px solid var(--line);border-radius:11px}
+.payment-name,.payment-items,.payment-total{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.payment-items{color:var(--muted);font-size:.85rem}
+.payment-total{text-align:right}
+.payment-button{padding:8px 10px}
+.history-totals{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px;margin:12px 0}
+.history-totals>div{background:#fff;border:1px solid var(--line);border-radius:15px;padding:13px;display:flex;flex-direction:column;gap:4px}
+.history-totals span{font-size:.75rem;color:var(--muted);font-weight:700;text-transform:uppercase}
+.history-totals b{font-size:1.25rem}
+.history-filter{display:grid;grid-template-columns:150px 150px auto auto 1fr;gap:10px;align-items:end;margin-bottom:14px}
+.history-filter input{margin-bottom:0}
+.history-filter-total{text-align:right;padding-bottom:10px}
+.requested-time{margin:9px 0;padding:8px 10px;background:#f7f2ec;border-radius:10px;font-size:.82rem}
+@media(max-width:700px){
+  .payment-row{grid-template-columns:1fr auto;gap:4px 8px}
+  .payment-items{grid-column:1/2}
+  .payment-total{grid-column:2/3;grid-row:1/2}
+  .payment-button{grid-column:2/3;grid-row:2/3}
+  .history-filter{grid-template-columns:1fr 1fr}
+  .history-filter-total{grid-column:1/-1;text-align:left}
+}

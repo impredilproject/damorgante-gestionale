@@ -1,6 +1,9 @@
 let data={settings:null,catalog:[],orders:[]};
 let editId=null;
 let catalogEditId=null;
+let historyMode='range';
+let historyFrom=localDateInput(new Date(Date.now()-86400000));
+let historyTo=localDateInput(new Date());
 let currentTab='banco';
 let bancoSidesOpen=false;
 let bancoDrinksOpen=false;
@@ -186,6 +189,35 @@ function esc(value){
   })[char]);
 }
 
+
+function localDateInput(date){
+  const d=new Date(date);
+  const y=d.getFullYear();
+  const m=String(d.getMonth()+1).padStart(2,'0');
+  const day=String(d.getDate()).padStart(2,'0');
+  return `${y}-${m}-${day}`;
+}
+function startOfLocalDay(value){ return new Date(`${value}T00:00:00`); }
+function endOfLocalDay(value){ return new Date(`${value}T23:59:59.999`); }
+function requestedAt(order){
+  return new Date(order.created_at).toLocaleString('it-IT',{day:'2-digit',month:'2-digit',year:'numeric',hour:'2-digit',minute:'2-digit'});
+}
+function paidAmount(order){
+  if(order.payment_status!=='paid') return 0;
+  const paid=Number(order.paid_total);
+  if(Number.isFinite(paid) && paid>=0) return paid;
+  return Math.max(0,Number(order.original_total||0)-Number(order.discount||0));
+}
+function orderCounts(order){
+  const sandwiches=(order.sandwiches||[]).reduce((n,x)=>n+Number(x.qty||1),0);
+  const drinks=(order.drinks||[]).reduce((n,x)=>n+Number(x.qty||0),0);
+  const sides=(order.sides||[]).reduce((n,x)=>n+Number(x.qty||0),0);
+  const parts=[];
+  if(sandwiches) parts.push(`${sandwiches} ${sandwiches===1?'panino':'panini'}`);
+  if(drinks) parts.push(`${drinks} ${drinks===1?'bevanda':'bevande'}`);
+  if(sides) parts.push(`${sides} ${sides===1?'patatina':'patatine'}`);
+  return parts.join(' · ')||'Ordine';
+}
 function ingredientWeight(item){
   if(!item || item.kind!=='ingredient') return 0;
   const weight=Number(item.sandwich_price_weight);
@@ -383,6 +415,7 @@ function render(){
     (pendingCount?` · ${pendingCount} in attesa`:'');
 
   renderBanco();
+  renderDaPagare();
   renderCoda();
   renderStorico();
   renderSettings();
@@ -531,7 +564,6 @@ function renderBanco(){
 
   bindPendingActions('banco');
   bindBancoForm(ingredients,editing);
-  bindUnpaidActions();
 }
 
 function bindBancoForm(ingredients,editing){
@@ -749,31 +781,37 @@ function bindBancoForm(ingredients,editing){
   };
 }
 
-function unpaidCardsHtml(){
-  const orders=data.orders
-    .filter(order=>order.payment_status==='unpaid' && !['rejected','pending_approval'].includes(order.status))
-    .sort((a,b)=>new Date(b.created_at)-new Date(a.created_at));
-
-  if(!orders.length) return '<p class="empty-state">Nessun pagamento in sospeso.</p>';
-
-  return orders.map(order=>`
-    <article class="order payment-card">
-      <div class="row between">
-        <div>
-          <b class="big">${esc(order.customer_name)}</b>
-          <span class="badge">${esc(order.status)}</span>
-        </div>
-        <b class="total-small">${euro(order.original_total)}</b>
-      </div>
-      ${orderLines(order,true)}
-      <button class="success full" data-mark-paid="${order.id}">PAGATO</button>
-    </article>`).join('');
+function unpaidOrders(){
+  return data.orders
+    .filter(order=>order.payment_status==='unpaid' && order.status!=='rejected')
+    .sort((a,b)=>new Date(a.created_at)-new Date(b.created_at));
 }
 
-function bindUnpaidActions(){
-  $$('[data-mark-paid]').forEach(button=>{
-    button.onclick=()=>act('mark_paid',button.dataset.markPaid);
-  });
+function renderDaPagare(){
+  const orders=unpaidOrders();
+  $('#tab-pagare').innerHTML=`
+    <section class="section-block">
+      <div class="section-heading">
+        <div><span class="eyebrow">Cassa rapida</span><h2>Da pagare (${orders.length})</h2></div>
+      </div>
+      <input id="paymentSearch" class="payment-search" placeholder="Cerca cliente...">
+      <div id="paymentRows" class="payment-list"></div>
+    </section>`;
+
+  const draw=()=>{
+    const q=String($('#paymentSearch')?.value||'').trim().toLowerCase();
+    const visible=orders.filter(order=>String(order.customer_name||'').toLowerCase().includes(q));
+    $('#paymentRows').innerHTML=visible.length?visible.map(order=>`
+      <div class="payment-row">
+        <b class="payment-name">${esc(order.customer_name)}</b>
+        <span class="payment-items">${esc(orderCounts(order))}</span>
+        <b class="payment-total">${euro(order.original_total)}</b>
+        <button class="success payment-button" data-mark-paid="${order.id}">PAGA</button>
+      </div>`).join(''):'<p class="empty-state">Nessun ordine da pagare.</p>';
+    $$('[data-mark-paid]').forEach(button=>button.onclick=()=>act('mark_paid',button.dataset.markPaid));
+  };
+  $('#paymentSearch').oninput=draw;
+  draw();
 }
 
 function renderCoda(){
@@ -789,7 +827,7 @@ function renderCoda(){
           <h2>Richieste QR (${pendingOrders().length})</h2>
         </div>
       </div>
-      ${pendingCardsHtml('paninaro')}
+      ${data.settings.show_qr_to_kitchen!==false?pendingCardsHtml('paninaro'):'<p class="empty-state">Le richieste QR sono nascoste al Paninaro.</p>'}
     </section>
 
     <section class="section-block">
@@ -817,7 +855,7 @@ function renderCoda(){
         </article>`).join(''):'<p class="empty-state">Nessun panino in coda.</p>'}
     </section>`;
 
-  bindPendingActions('paninaro');
+  if(data.settings.show_qr_to_kitchen!==false) bindPendingActions('paninaro');
   $$('[data-deliver]').forEach(button=>button.onclick=()=>act('deliver',button.dataset.deliver));
 }
 
@@ -846,58 +884,56 @@ function startEditOrder(id){
 }
 
 function renderStorico(){
-  const orders=data.orders.filter(order=>['delivered','rejected'].includes(order.status));
+  const completed=data.orders.filter(order=>['delivered','rejected'].includes(order.status));
+  const now=new Date();
+  const today=localDateInput(now);
+  const yesterday=localDateInput(new Date(now.getFullYear(),now.getMonth(),now.getDate()-1));
+  const totalForDay=(day)=>completed.filter(o=>localDateInput(new Date(o.created_at))===day).reduce((sum,o)=>sum+paidAmount(o),0);
+  const totalAlways=completed.reduce((sum,o)=>sum+paidAmount(o),0);
+  let orders=completed;
+  if(historyMode==='range'){
+    const from=startOfLocalDay(historyFrom), to=endOfLocalDay(historyTo);
+    orders=completed.filter(o=>{const d=new Date(o.created_at);return d>=from&&d<=to;});
+  }
+  orders.sort((a,b)=>new Date(b.created_at)-new Date(a.created_at));
+  const filteredTotal=orders.reduce((sum,o)=>sum+paidAmount(o),0);
 
   $('#tab-storico').innerHTML=`
-    <div class="section-heading">
-      <div>
-        <span class="eyebrow">Archivio</span>
-        <h2>Storico</h2>
-      </div>
+    <div class="section-heading"><div><span class="eyebrow">Archivio e incassi</span><h2>Storico</h2></div></div>
+    <div class="history-totals">
+      <div><span>Ieri</span><b>${euro(totalForDay(yesterday))}</b></div>
+      <div><span>Oggi</span><b>${euro(totalForDay(today))}</b></div>
+      <div><span>Sempre</span><b>${euro(totalAlways)}</b></div>
     </div>
+    <section class="panel history-filter">
+      <div><label>Dal</label><input id="historyFrom" type="date" value="${historyFrom}"></div>
+      <div><label>Al</label><input id="historyTo" type="date" value="${historyTo}"></div>
+      <button id="applyHistory" class="primary">Cerca</button>
+      <button id="allHistory" class="secondary">Tutto lo storico</button>
+      <b class="history-filter-total">Totale visualizzato: ${euro(filteredTotal)}</b>
+    </section>
     ${orders.length?orders.map(order=>`
       <article class="order">
         <div class="row between">
-          <div>
-            <b class="big">${esc(order.customer_name)}</b>
-            <span class="badge">${order.status==='delivered'?'Consegnato':'Rifiutato'}</span>
-          </div>
+          <div><b class="big">${esc(order.customer_name)}</b><span class="badge">${order.status==='delivered'?'Consegnato':'Rifiutato'}</span></div>
           <b>${euro(order.original_total)}</b>
         </div>
+        <div class="requested-time">Richiesto il <b>${requestedAt(order)}</b></div>
         ${orderLines(order,true)}
         ${order.status==='delivered'?`<div class="delivery-time">Tempo totale: <b>${formatElapsed(elapsedMs(order))}</b></div>`:''}
-        <div class="muted">
-          Pagamento: ${order.payment_status==='paid'
-            ? 'PAGATO'
-            : 'DA PAGARE'}
-          · Sconto: ${euro(order.discount)}
-        </div>
+        <div class="muted">Pagamento: ${order.payment_status==='paid'?'PAGATO':'DA PAGARE'} · Sconto: ${euro(order.discount)}</div>
         <div class="row">
           <button class="secondary" data-edit="${order.id}">Modifica</button>
           ${order.status==='delivered'?`<button class="warn" data-reopen="${order.id}">Annulla consegna</button>`:''}
           <button class="danger" data-delete="${order.id}">Elimina</button>
         </div>
-      </article>`).join(''):'<p class="empty-state">Nessun ordine nello storico.</p>'}`;
+      </article>`).join(''):'<p class="empty-state">Nessun ordine nel periodo selezionato.</p>'}`;
 
-  $$('[data-edit]').forEach(button=>{
-    button.onclick=()=>startEditOrder(button.dataset.edit);
-  });
-
-  $$('[data-reopen]').forEach(button=>{
-    button.onclick=()=>{
-      if(confirm('Annullare la consegna e rimettere questo ordine in coda?')){
-        act('reopen_order',button.dataset.reopen);
-      }
-    };
-  });
-
-  $$('[data-delete]').forEach(button=>{
-    button.onclick=()=>{
-      if(confirm('Eliminare definitivamente questo ordine?')){
-        act('delete_order',button.dataset.delete);
-      }
-    };
-  });
+  $('#applyHistory').onclick=()=>{historyFrom=$('#historyFrom').value||historyFrom;historyTo=$('#historyTo').value||historyTo;historyMode='range';renderStorico();};
+  $('#allHistory').onclick=()=>{historyMode='all';renderStorico();};
+  $$('[data-edit]').forEach(button=>button.onclick=()=>startEditOrder(button.dataset.edit));
+  $$('[data-reopen]').forEach(button=>button.onclick=()=>{if(confirm('Annullare la consegna e rimettere questo ordine in coda?')) act('reopen_order',button.dataset.reopen);});
+  $$('[data-delete]').forEach(button=>button.onclick=()=>{if(confirm('Eliminare definitivamente questo ordine?')) act('delete_order',button.dataset.delete);});
 }
 
 function renderSettings(){
@@ -929,6 +965,17 @@ function renderSettings(){
         </div>
         <button id="togglePaymentRule" class="${data.settings.qr_payment_before_acceptance?'warn':'success'}">
           ${data.settings.qr_payment_before_acceptance?'Consenti pagamento dopo':'Richiedi pagamento prima'}
+        </button>
+      </div>
+
+      <div class="sep"></div>
+      <div class="setting-row">
+        <div>
+          <h2>Richieste QR visibili al Paninaro</h2>
+          <p>${data.settings.show_qr_to_kitchen!==false?'Il Paninaro vede le richieste QR ancora da accettare.':'Le richieste QR in attesa sono visibili solo al Banco.'}</p>
+        </div>
+        <button id="toggleQrKitchen" class="${data.settings.show_qr_to_kitchen!==false?'warn':'success'}">
+          ${data.settings.show_qr_to_kitchen!==false?'Nascondi al Paninaro':'Mostra al Paninaro'}
         </button>
       </div>
     </section>
@@ -1038,6 +1085,10 @@ function renderSettings(){
 
   $('#togglePaymentRule').onclick=()=>act('toggle_payment_rule',null,{
     enabled:!data.settings.qr_payment_before_acceptance
+  });
+
+  $('#toggleQrKitchen').onclick=()=>act('toggle_qr_kitchen',null,{
+    enabled:data.settings.show_qr_to_kitchen===false
   });
 
   $('#saveCatalog').onclick=async()=>{
