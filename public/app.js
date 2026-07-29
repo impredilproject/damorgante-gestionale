@@ -550,16 +550,6 @@ function renderBanco(){
         <button id="save" class="success">${editing?'Salva modifiche':'Invia in coda'}</button>
         ${editing?'<button id="cancelEdit" class="secondary">Annulla modifica</button>':''}
       </div>
-    </section>
-
-    <section class="section-block">
-      <div class="section-heading">
-        <div>
-          <span class="eyebrow">Cassa</span>
-          <h2>Da incassare</h2>
-        </div>
-      </div>
-      ${unpaidCardsHtml()}
     </section>`;
 
   bindPendingActions('banco');
