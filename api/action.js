@@ -102,6 +102,16 @@ export default async function handler(req,res){
         .eq('id',1);
       if(error) throw error;
 
+    }else if(action==='toggle_qr_kitchen'){
+      const {error}=await s
+        .from('morgante_settings')
+        .update({
+          show_qr_to_kitchen:!!body.enabled,
+          updated_at:new Date().toISOString()
+        })
+        .eq('id',1);
+      if(error) throw error;
+
     }else if(action==='accept_qr'){
       const order=await getPendingOrder(s,body.id);
       const markPaid=!!body.mark_paid;
