@@ -106,10 +106,6 @@ export default async function handler(req,res){
       const order=await getPendingOrder(s,body.id);
       const markPaid=!!body.mark_paid;
 
-      if(order.payment_required_before_acceptance && !markPaid){
-        throw new Error('Questa richiesta deve essere pagata prima dell’accettazione');
-      }
-
       const update={
         status:'queued',
         accepted_at:new Date().toISOString(),
@@ -291,12 +287,19 @@ export default async function handler(req,res){
       };
 
       if(action==='create_order'){
+        const submissionId=String(body.submission_id||'').trim();
+        if(!/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(submissionId)){
+          throw new Error('Identificativo invio non valido');
+        }
+        payload.submission_id=submissionId;
         payload.source='manual';
         payload.status='queued';
         payload.accepted_at=new Date().toISOString();
         payload.payment_required_before_acceptance=false;
 
-        const {error}=await s.from('morgante_orders').insert(payload);
+        const {error}=await s
+          .from('morgante_orders')
+          .upsert(payload,{onConflict:'submission_id',ignoreDuplicates:true});
         if(error) throw error;
       }else{
         const {error}=await s
