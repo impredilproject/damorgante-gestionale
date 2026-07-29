@@ -156,7 +156,7 @@ async function restoreSession(){
     $('#app').hidden=true;
     $('#login').hidden=false;
     if(error.status!==401){
-      $('#loginErr').textContent='Impossibile collegarsi al gestionale. Riprova.';
+      $('#loginErr').textContent=error.message||'Impossibile collegarsi al gestionale. Riprova.';
     }
   }
 }
